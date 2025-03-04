@@ -3,10 +3,11 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { TasksModule } from './tasks/tasks.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ChatGateway } from './util/chat.gateway';
 
 @Module({
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, ChatGateway],
   imports: [
     TasksModule,
     TypeOrmModule.forRoot({

@@ -1,50 +1,93 @@
 import {
   WebSocketGateway,
-  WebSocketServer,
   SubscribeMessage,
+  WebSocketServer,
   MessageBody,
-  ConnectedSocket,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-
-interface SearchUser {
-  socketId: string;
-  userId: string;
-}
-
-@WebSocketGateway({ cors: true })
+import { MessageService } from 'src/tasks/message.service';
+@WebSocketGateway({
+  cors: {
+    origin: '*',
+  },
+  pingTimeout: 60000,
+  pingInterval: 25000,
+})
 export class ChatGateway {
   @WebSocketServer()
   server: Server;
 
-  private searchQueue: SearchUser[] = [];
+  private queue: Socket[] = []; // Очередь пользователей в поиске
 
-  // Начало поиска собеседника
-  @SubscribeMessage('startSearch')
-  handleSearch(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() userId: string,
-  ) {
-    console.log(`User ${userId} started searching...`);
+  constructor(private messageService: MessageService) {} // Внедрение MessageService
 
-    // Если уже есть кто-то в очереди — соединяем пользователей
-    if (this.searchQueue.length > 0) {
-      const partner = this.searchQueue.shift(); // Берём первого из очереди
-      if (partner) {
-        client.emit('matchFound', { roomId: partner.socketId });
-        this.server
-          .to(partner.socketId)
-          .emit('matchFound', { roomId: client.id });
-      }
-    } else {
-      // Добавляем в очередь
-      this.searchQueue.push({ socketId: client.id, userId });
-    }
+  handleConnection(client: Socket) {
+    console.log(` Клиент подключился: ${client.id}`);
+    console.log(` Текущая очередь: ${this.queue.map((c) => c.id).join(', ')}`);
   }
 
-  // Отправка сообщения в чат
+  handleDisconnect(client: Socket) {
+    console.log(`❌ Клиент отключился: ${client.id}`);
+    this.queue = this.queue.filter((user) => user.id !== client.id);
+    console.log(
+      ` Текущая очередь после отключения: ${this.queue.map((c) => c.id).join(', ')}`,
+    );
+  }
+
+  @SubscribeMessage('startSearch')
+  handleSearch(client: Socket) {
+    console.log(` Клиент ${client.id} начал поиск`);
+
+    console.log(
+      ` Очередь перед поиском: ${this.queue.map((c) => c.id).join(', ')}`,
+    );
+
+    if (this.queue.length > 0) {
+      const partner = this.queue.shift();
+
+      if (!partner) {
+        console.error('❌ Ошибка: partner оказался undefined');
+        return;
+      }
+
+      const roomId = `room_${client.id}_${partner.id}`;
+      console.log(
+        `✅ Найдена пара: ${client.id} ↔ ${partner.id} (комната: ${roomId})`,
+      );
+
+      client.join(roomId);
+      partner.join(roomId);
+
+      client.emit('matchFound', { roomId });
+      partner.emit('matchFound', { roomId });
+    } else {
+      console.log(`⏳ Клиент ${client.id} встал в очередь`);
+      this.queue.push(client);
+    }
+
+    console.log(
+      ` Очередь после поиска: ${this.queue.map((c) => c.id).join(', ')}`,
+    );
+  }
+
   @SubscribeMessage('sendMessage')
-  handleMessage(@MessageBody() data: { roomId: string; message: string }) {
-    this.server.to(data.roomId).emit('newMessage', data.message);
+  async handleMessage(
+    @MessageBody() data: { roomId: string; message: string; userId: string },
+  ) {
+    try {
+      
+      console.log(data);
+      const message = await this.messageService.create({
+        roomId: data.roomId,
+        userId: data.userId,
+        message: data.message,
+        timestamp: new Date(),
+      });
+      this.server.to(data.roomId).emit('newMessage', message);
+    } catch (error) {
+      console.error('Ошибка при обработке сообщения:', error);
+      // Отправьте сообщение об ошибке клиенту
+      // this.server.to(data.roomId).emit('errorMessage', 'Ошибка при отправке сообщения');
+    }
   }
 }

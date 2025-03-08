@@ -1,13 +1,12 @@
 import { Module } from '@nestjs/common';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
+import { TasksController } from './tasks/tasks.controller';
 import { TasksModule } from './tasks/tasks.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { ChatGateway } from './util/chat.gateway';
+import { ChatGateway } from './util/chat.gateway'; // Убедитесь, что путь правильный
 
 @Module({
-  controllers: [AppController],
-  providers: [AppService, ChatGateway],
+  controllers: [TasksController],
+  providers: [ChatGateway],
   imports: [
     TasksModule,
     TypeOrmModule.forRoot({
@@ -15,8 +14,8 @@ import { ChatGateway } from './util/chat.gateway';
       host: process.env.DB_HOST || 'localhost',
       port: Number(process.env.DB_PORT) || 5432,
       username: 'postgres',
-      password: 'password', // убедись, что совпадает с docker-compose.yml
-      database: 'postgres', // <-- исправлено
+      password: 'password',
+      database: 'postgres',
       autoLoadEntities: true,
       synchronize: true,
     }),

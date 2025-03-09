@@ -3,7 +3,7 @@ import { TasksController } from './tasks/tasks.controller';
 import { TasksModule } from './tasks/tasks.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ChatGateway } from './util/chat.gateway'; // Убедитесь, что путь правильный
-
+import { MessagesModule } from './tasks/messages.module';
 @Module({
   controllers: [TasksController],
   providers: [ChatGateway],
@@ -19,6 +19,7 @@ import { ChatGateway } from './util/chat.gateway'; // Убедитесь, что
       autoLoadEntities: true,
       synchronize: true,
     }),
+    MessagesModule,
   ],
 })
 export class AppModule {}

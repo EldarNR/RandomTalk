@@ -17,7 +17,7 @@
             <div v-for="message in messages" :key="message.id" class="flex"
                 :class="message.isMine ? 'justify-end' : 'justify-start'">
                 <div class="bg-blue-500 text-white px-4 py-2 rounded-lg max-w-xs">
-                    <p v-html="message.text"></p>
+                    <p v-html="message.message"></p>
                 </div>
             </div>
         </div>
@@ -48,7 +48,16 @@ const socket = io("http://localhost:5000", {
 
 const user = ref({ name: "Иван", avatar: "https://i.pravatar.cc/300" });
 
-const messages = ref<{ id: number; text: string; isMine: boolean }[]>([]);
+interface Data {
+    id: number;
+    message: string;
+    roomId: string;
+    timestamp: Date; // Изменяем тип на Date
+    userId: string;
+    isMine: boolean; // Добавляем поле isMine
+}
+
+const messages = ref<Data[]>([]);
 const newMessage = ref("");
 const showEmojiPicker = ref(false);
 const chatContainer = ref<HTMLElement | null>(null);
@@ -66,29 +75,52 @@ function generateUserId() {
 
 socket.on("newMessage", (message: { message: string; userId: string; roomId: string }) => {
     console.log("Получено новое сообщение:", message);
+    console.log("message.userId:", message.userId); // Добавляем логирование message.userId
     messages.value.push({
         id: Date.now(),
-        text: message.message,
+        message: message.message,
+        userId: message.userId,
+        roomId: message.roomId,
+        timestamp: new Date(),
         isMine: message.userId === userId.value,
     });
     scrollToBottom();
 });
 
-onMounted(() => {
-    console.log(" Подключение к WebSocket...");
+async function getMessage() {
+    try {
+        const response = await fetch(`http://localhost:5000/messages/${localStorage.getItem('roomId')}`);
+        const history: Data[] = await response.json();
+        console.log("История сообщений:", history);
+        messages.value = history.map((message: Data) => ({
+            ...message,
+            isMine: message.userId === userId.value,
+        }));
+        scrollToBottom();
+    } catch (error) {
+        console.error("Ошибка при получении истории сообщений:", error);
+    }
+}
 
+onMounted(async () => { // Добавляем async
+    console.log("Подключение к WebSocket...");
+    console.log("userId:", userId.value);
+    getMessage();
     socket.on("connect", () => {
         console.log("✅ Подключено к серверу! ID сокета:", socket.id);
 
         socket.on("room", (room: string) => {
             console.log("Получен roomId:", room);
             roomId.value = room;
-            localStorage.setItem('roomId', room); // Сохраняем roomId в localStorage
+            localStorage.setItem('roomId', room);
         });
 
         socket.emit("getHistory", localStorage.getItem('roomId'));
-        socket.on("history", (history: any[]) => {
-            messages.value = history;
+        socket.on("history", (history: Data[]) => {
+            messages.value = history.map((message: Data) => ({
+                ...message,
+                isMine: message.userId === userId.value,
+            }));
             scrollToBottom();
         });
 
@@ -99,25 +131,19 @@ onMounted(() => {
         console.error("❌ Ошибка подключения:", error);
     });
 });
-
 onUnmounted(() => {
     socket.disconnect();
 });
 
-const sendMessage = () => {
+const sendMessage = async () => {
     if (!newMessage.value.trim()) return;
-    socket.emit("sendMessage", {
-        message: newMessage.value,
-        userId: userId.value,
-        roomId: localStorage.getItem('roomId'), // Получаем roomId из localStorage
-    });
-    console.log({
+    await socket.emit("sendMessage", {
         message: newMessage.value,
         userId: userId.value,
         roomId: localStorage.getItem('roomId'),
-    })
-
+    });
     newMessage.value = "";
+    await getMessage()
 };
 
 const addEmoji = (emoji: any) => {
@@ -127,14 +153,14 @@ const addEmoji = (emoji: any) => {
 
 const scrollToBottom = () => {
     nextTick(() => {
-        console.log("Вызов scrollToBottom");
-        chatContainer.value?.scrollTo({
-            top: chatContainer.value.scrollHeight,
-            behavior: "smooth",
-        });
+        if (chatContainer.value) { // Добавляем проверку chatContainer.value
+            chatContainer.value.scrollTo({
+                top: chatContainer.value.scrollHeight,
+                behavior: "smooth",
+            });
+        }
     });
 };
-
 const disconnect = () => {
     console.log(" Отключился от чата");
     socket.emit("disconnectUser", { userId: userId.value, roomId: roomId.value });

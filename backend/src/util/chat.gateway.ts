@@ -21,11 +21,6 @@ export class ChatGateway {
 
   constructor(private messageService: MessageService) {} // Внедрение MessageService
 
-  handleConnection(client: Socket) {
-    console.log(` Клиент подключился: ${client.id}`);
-    console.log(` Текущая очередь: ${this.queue.map((c) => c.id).join(', ')}`);
-  }
-
   handleDisconnect(client: Socket) {
     console.log(`❌ Клиент отключился: ${client.id}`);
     this.queue = this.queue.filter((user) => user.id !== client.id);
@@ -75,8 +70,6 @@ export class ChatGateway {
     @MessageBody() data: { roomId: string; message: string; userId: string },
   ) {
     try {
-      
-      console.log(data);
       const message = await this.messageService.create({
         roomId: data.roomId,
         userId: data.userId,
@@ -86,8 +79,6 @@ export class ChatGateway {
       this.server.to(data.roomId).emit('newMessage', message);
     } catch (error) {
       console.error('Ошибка при обработке сообщения:', error);
-      // Отправьте сообщение об ошибке клиенту
-      // this.server.to(data.roomId).emit('errorMessage', 'Ошибка при отправке сообщения');
     }
   }
 }

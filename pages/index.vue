@@ -36,14 +36,14 @@ socket.on('connect_error', (error) => {
 });
 
 
-const findPartner = () => {
+const findPartner = async () => {
     if (isSearching.value) return;
 
     isSearching.value = true;
     roomId.value = null;
 
     console.log(`🔍 Отправляю startSearch.. (ID сокета: ${socket.id})`);
-    socket.emit("startSearch");
+    await socket.emit("startSearch");
 };
 
 socket.on("matchFound", (data) => {

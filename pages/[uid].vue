@@ -52,9 +52,9 @@ interface Data {
     id: number;
     message: string;
     roomId: string;
-    timestamp: Date; // Изменяем тип на Date
+    timestamp: Date;
     userId: string;
-    isMine: boolean; // Добавляем поле isMine
+    isMine: boolean;
 }
 
 const messages = ref<Data[]>([]);
@@ -73,9 +73,21 @@ function generateUserId() {
     return id;
 }
 
+socket.on("connect", () => {
+    console.log("✅ Подключено к серверу! ID сокета:", socket.id);
+});
+
+socket.on("disconnect", () => {
+    console.log("❌ Отключено от сервера");
+});
+
+socket.on("connect_error", (error) => {
+    console.error("❌ Ошибка подключения:", error);
+});
+
 socket.on("newMessage", (message: { message: string; userId: string; roomId: string }) => {
     console.log("Получено новое сообщение:", message);
-    console.log("message.userId:", message.userId); // Добавляем логирование message.userId
+    console.log("message.userId:", message.userId);
     messages.value.push({
         id: Date.now(),
         message: message.message,
@@ -87,9 +99,39 @@ socket.on("newMessage", (message: { message: string; userId: string; roomId: str
     scrollToBottom();
 });
 
+socket.on("matchFound", (data: { roomId: string }) => {
+    console.log("Найдена пара, roomId:", data.roomId);
+    roomId.value = data.roomId;
+    localStorage.setItem('roomId', data.roomId);
+    getMessage(); // Загружаем историю сообщений после нахождения пары
+});
+
+socket.on("searchFailed", (data: { message: string }) => {
+    console.error("Ошибка поиска:", data.message);
+    // Добавьте уведомление пользователю об ошибке
+});
+
+socket.on("sendMessageFailed", (data: { message: string }) => {
+    console.error("Ошибка отправки сообщения:", data.message);
+    // Добавьте уведомление пользователю об ошибке
+});
+
+socket.on("userDisconnected", (data: { userId: string }) => {
+    console.log("Пользователь отключился:", data.userId);
+    // Добавьте уведомление пользователю об отключении собеседника
+});
+
 async function getMessage() {
     try {
-        const response = await fetch(`http://localhost:5000/messages/${localStorage.getItem('roomId')}`);
+        const roomId = localStorage.getItem('roomId');
+        if (!roomId) {
+            console.error("roomId не найден в localStorage");
+            return;
+        }
+        const response = await fetch(`http://localhost:5000/messages/${roomId}`);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
         const history: Data[] = await response.json();
         console.log("История сообщений:", history);
         messages.value = history.map((message: Data) => ({
@@ -102,48 +144,40 @@ async function getMessage() {
     }
 }
 
-onMounted(async () => { // Добавляем async
-    console.log("Подключение к WebSocket...");
+onMounted(async () => {
     console.log("userId:", userId.value);
-    getMessage();
-    socket.on("connect", () => {
-        console.log("✅ Подключено к серверу! ID сокета:", socket.id);
-
-        socket.on("room", (room: string) => {
-            console.log("Получен roomId:", room);
-            roomId.value = room;
-            localStorage.setItem('roomId', room);
-        });
-
-        socket.emit("getHistory", localStorage.getItem('roomId'));
-        socket.on("history", (history: Data[]) => {
-            messages.value = history.map((message: Data) => ({
-                ...message,
-                isMine: message.userId === userId.value,
-            }));
-            scrollToBottom();
-        });
-
-        socket.emit("startSearch");
+    socket.on("room", (room: string) => {
+        console.log("Получен roomId:", room);
+        roomId.value = room;
+        localStorage.setItem('roomId', room);
     });
 
-    socket.on("connect_error", (error) => {
-        console.error("❌ Ошибка подключения:", error);
-    });
+    await getMessage(); // Загружаем историю сообщений при подключении
+
+    socket.emit("startSearch");
 });
+
 onUnmounted(() => {
     socket.disconnect();
 });
 
-const sendMessage = async () => {
+const sendMessage = () => {
     if (!newMessage.value.trim()) return;
-    await socket.emit("sendMessage", {
+    const newMessageData: Data = {
+        id: Date.now(),
+        message: newMessage.value,
+        userId: userId.value,
+        roomId: localStorage.getItem('roomId') || '',
+        timestamp: new Date(),
+        isMine: true,
+    };
+    scrollToBottom();
+    socket.emit("sendMessage", {
         message: newMessage.value,
         userId: userId.value,
         roomId: localStorage.getItem('roomId'),
     });
     newMessage.value = "";
-    await getMessage()
 };
 
 const addEmoji = (emoji: any) => {
@@ -153,7 +187,7 @@ const addEmoji = (emoji: any) => {
 
 const scrollToBottom = () => {
     nextTick(() => {
-        if (chatContainer.value) { // Добавляем проверку chatContainer.value
+        if (chatContainer.value) {
             chatContainer.value.scrollTo({
                 top: chatContainer.value.scrollHeight,
                 behavior: "smooth",
@@ -161,6 +195,7 @@ const scrollToBottom = () => {
         }
     });
 };
+
 const disconnect = () => {
     console.log(" Отключился от чата");
     socket.emit("disconnectUser", { userId: userId.value, roomId: roomId.value });

@@ -25,6 +25,13 @@ export class ChatGateway implements OnGatewayDisconnect {
 
   constructor(private messageService: MessageService) {}
 
+  Auth(client: Socket) {
+    console.log(`Пользователь ${client.id} отключился`);
+    const rooms = Object.keys(client.rooms).filter((room) => room !== client.id);
+    rooms.forEach((room) => {
+      this.server.to(room).emit('userDisconnected', { userId: client.id });
+    });
+  }
   handleDisconnect(client: Socket) {
     console.log(`Пользователь ${client.id} отключился`);
     const rooms = Object.keys(client.rooms).filter((room) => room !== client.id);

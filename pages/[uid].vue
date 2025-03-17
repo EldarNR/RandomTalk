@@ -14,25 +14,33 @@ import { io } from 'socket.io-client';
 import ChatHeader from '~/components/chat-page/chat-head.vue';
 import MessageList from '~/components/chat-page/message-list.vue';
 import MessageInput from '~/components/chat-page/message-Input.vue';
+
+import { generateUserId } from '~/components/func/generateUserId';
 import type { Message, User } from '~/components/chat-page/types/chat.types.js';
 
-const socket = io('http://localhost:5000', { transports: ['websocket'] });
+const config = useRuntimeConfig();
+const apiBase = config.public.apiBase; // API
 const user = ref<User>({ name: 'Иван', avatar: 'https://i.pravatar.cc/300' });
 const messages = ref<Message[]>([]);
 const router = useRouter();
 const roomId = ref('');
-const userId = ref(typeof window !== 'undefined' && localStorage.getItem('userId') || generateUserId());
 const messageList = ref<InstanceType<typeof MessageList> | null>(null);
+let userId = ref<string | undefined>(localStorage.getItem("userId") || generateUserId());
+let socket = io(apiBase, {
+    query: { userId: userId.value }, // Передача userId
+});
 
-
-function generateUserId() {
-    const id = Math.random().toString(36).substring(2, 15);
-    if (typeof window !== 'undefined') {
-        localStorage.setItem('userId', id);
-    }
-    return id;
+if (userId.value) {
+    localStorage.setItem("userId", userId.value); // Сохраняем userId в localStorage
+    socket = io(apiBase, {
+        query: { userId: userId.value },
+    });
+} else {
+    console.error("userId не определен");
+    // Обработайте случай, когда userId не определен
 }
 
+console.log('userId при подключении:', userId.value);
 // WebSocket Events
 socket.on('connect', () => console.log('✅ Подключено к серверу! ID сокета:', socket.id));
 socket.on('disconnect', () => console.log('❌ Отключено от сервера'));
@@ -42,13 +50,10 @@ socket.on('matchFound', handleMatchFound);
 socket.on('searchFailed', handleSearchFailed);
 socket.on('sendMessageFailed', handleSendMessageFailed);
 socket.on('userDisconnected', handleUserDisconnected);
-
-function handleNewMessage(message: Message) {
-    console.log('Получено новое сообщение:', message);
-    messages.value.push({ ...message, isMine: message.userId === userId.value });
-    messageList.value?.scrollToBottom();
-}
-
+socket.on('roomClosed', () => {
+    console.log('Собеседник покинул комнату');
+    router.push('/');
+});
 function handleMatchFound(data: { roomId: string }) {
     console.log('Найдена пара, roomId:', data.roomId);
     roomId.value = data.roomId;
@@ -78,7 +83,7 @@ async function getMessage() {
             console.error('roomId не найден в localStorage');
             return;
         }
-        const response = await fetch(`http://localhost:5000/messages/${roomId}`);
+        const response = await fetch(`${apiBase}/messages/${roomId}`);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -88,6 +93,7 @@ async function getMessage() {
             isMine: message.userId === userId.value,
         }));
         messageList.value?.scrollToBottom();
+        localStorage.setItem('chatMessages', JSON.stringify(messages.value)); // Сохранение сообщений
     } catch (error) {
         console.error('Ошибка при получении истории сообщений:', error);
     }
@@ -102,13 +108,24 @@ function handleSendMessage(message: string) {
         timestamp: new Date(),
         isMine: true,
     };
-    messages.value.push(newMessage);
+    messages.value.push(newMessage); // Добавляем сообщение в messages
     messageList.value?.scrollToBottom();
     socket.emit('sendMessage', {
         message,
         userId: userId.value,
         roomId: localStorage.getItem('roomId'),
     });
+    localStorage.setItem('chatMessages', JSON.stringify(messages.value)); // Сохранение сообщений
+}
+
+function handleNewMessage(message: Message) {
+    console.log('Получено новое сообщение:', message);
+    // Проверяем, является ли сообщение вашим собственным
+    if (message.userId !== userId.value) {
+        messages.value.push({ ...message, isMine: message.userId === userId.value });
+        messageList.value?.scrollToBottom();
+        localStorage.setItem('chatMessages', JSON.stringify(messages.value)); // Сохранение сообщений
+    }
 }
 
 function disconnect() {
@@ -124,12 +141,18 @@ onMounted(async () => {
         roomId.value = room;
         localStorage.setItem('roomId', room);
     });
+    // Загрузка сообщений из localStorage
+    const storedMessages = localStorage.getItem('chatMessages');
+    if (storedMessages) {
+        messages.value = JSON.parse(storedMessages);
+    }
 
     await getMessage();
     socket.emit('startSearch');
 });
 
 onUnmounted(() => {
+    localStorage.removeItem('chatMessages');
     socket.disconnect();
 });
 </script>

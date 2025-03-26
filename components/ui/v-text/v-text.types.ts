@@ -8,6 +8,6 @@ export interface TextProps {
   variant?: TextVariant;
   size?: TextSize;
   weight?: TextWeight;
-  align?: TextAlign;
+  alignT?: TextAlign;
   decoration?: TextDecoration;
 }

@@ -1,21 +1,22 @@
 <template>
-    <form @submit.prevent="handleSubmit">
+    <form @submit="handleSubmit">
         <div v-for="field in form.fields" :key="field.key">
-            <label :for="field.key">{{ field.label }}</label>
-            <input :type="field.type" :id="field.key" v-model="form.data[field.key]" />
+            <label :for="field.key" >{{ field.label }}</label>
+            <input :type="field.type" :id="field.key" v-model="form.data[field.key]" :class="field.class" />
         </div>
-        <button type="submit">Отправить</button>
+        <vButton type="submit">{{ form.buttonText }}</vButton>
     </form>
 </template>
 
 <script setup lang="ts">
-import { ref, defineProps } from 'vue';
-import type { FormData } from './v-auto-form.types';
+import { ref, defineProps } from "vue";
+import type { FormData } from "./v-auto-form.types";
+import vButton from "../v-button/v-button.vue";
 
 const props = defineProps<{ form: FormData }>();
-const form = ref(props.form);
+const form = reactive(props.form);
 
-const handleSubmit = () => {
-    console.log(form.value.data);
+const handleSubmit = (): void => {
+    localStorage.setItem("username", String(form.data.username));
 };
 </script>

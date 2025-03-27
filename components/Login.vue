@@ -22,6 +22,8 @@
     </div>
 </template>
 <script setup lang="ts">
+"use strict";
+
 import vButton from "./ui/v-button/v-button.vue";
 import vText from "./ui/v-text/v-text.vue";
 import vAutoForm from "./ui/v-auto-form.vue/v-auto-form.vue";
@@ -42,7 +44,7 @@ const registrationForm: FormData = {
     },
 };
 
-onBeforeMount(() => {
+onMounted(() => {
     if (typeof window !== "undefined") {
         const storedUsername = localStorage.getItem("username");
         if (storedUsername) {

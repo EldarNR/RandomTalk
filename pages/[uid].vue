@@ -25,7 +25,7 @@ const messages = ref<Message[]>([]);
 const router = useRouter();
 const roomId = ref('');
 const messageList = ref<InstanceType<typeof MessageList> | null>(null);
-let userId = ref<string | undefined>(localStorage.getItem("userId") || generateUserId());
+let userId = ref<string>(localStorage.getItem("userId") || generateUserId());
 let socket = io(apiBase, {
     query: { userId: userId.value }, // Передача userId
 });

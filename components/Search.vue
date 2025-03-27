@@ -32,7 +32,7 @@ import { generateUserId } from "./func/generateUserId";
 const router = useRouter();
 const isSearching = ref(false);
 const roomId = ref(null);
-let userId = ref<string | undefined>(localStorage.getItem("userId") || generateUserId());
+let userId = ref<string>(localStorage.getItem("userId") || generateUserId());
 
 if (userId.value && !localStorage.getItem("userId")) {
     localStorage.setItem("userId", userId.value);
@@ -41,6 +41,7 @@ if (userId.value && !localStorage.getItem("userId")) {
 const socket = io("ws://localhost:5000", {
     query: {
         userId: userId.value,
+        username: localStorage.getItem("username"),
     },
 });
 
@@ -67,7 +68,6 @@ const findPartner = async () => {
 };
 
 socket.on("matchFound", (data) => {
-    console.log("✅ Собеседник найден:", data);
     roomId.value = data.roomId;
     localStorage.setItem("roomId", String(roomId.value));
     isSearching.value = false;

@@ -21,83 +21,110 @@ export class ChatGateway implements OnGatewayDisconnect {
   server: Server;
 
   private queue: Socket[] = [];
-  private rooms: { [userId: string]: string[] } = {}; // Тип: массив строк
+  private rooms: { [roomId: string]: string[] } = {};
+  private users: {
+    [socketId: string]: { userId: string; username: string; status: string };
+  } = {};
 
   constructor(private messageService: MessageService) {}
 
-  handleDisconnect(client: Socket) {
+  handleConnection(client: Socket) {
     const userId: string = client.handshake.query.userId as string;
-    console.log(`Пользователь ${client.id} отключился`);
+    const username: string = client.handshake.query.username as string;
 
-    // Находим комнату, в которой был пользователь
-    const roomId = Object.keys(this.rooms).find((room) =>
-      this.rooms[room].includes(userId),
-    );
-
-    if (roomId) {
-      // Удаляем пользователя из комнаты
-      this.rooms[roomId] = this.rooms[roomId].filter((id) => id !== userId);
-
-      if (this.rooms[roomId].length === 1) {
-        // В комнате остался один пользователь
-        const remainingUserId = this.rooms[roomId][0];
-        const remainingSocket =
-          this.server.sockets.sockets.get(remainingUserId);
-
-        if (remainingSocket) {
-          // Уведомляем оставшегося пользователя
-          remainingSocket.emit('roomClosed');
-          // Отключаем оставшегося пользователя от комнаты
-          remainingSocket.leave(roomId);
-        }
-
-        // Удаляем комнату
-        delete this.rooms[roomId];
-        console.log(`Комната ${roomId} закрыта`);
-      }
+    if (userId && username) {
+      this.users[client.id] = { userId, username, status: 'online' };
+      console.log(`Пользователь ${username} (${userId}) подключился`);
+    } else {
+      console.error(
+        `Ошибка: userId или username невалидны для клиента ${client.id}`,
+      );
+      client.disconnect();
     }
   }
+
+  handleDisconnect(client: Socket) {
+    const user = this.users[client.id];
+
+    if (user) {
+      user.status = 'offline';
+      console.log(`Пользователь ${user.username} (${user.userId}) отключился`);
+
+      // Находим комнату, в которой был пользователь
+      const roomId = Object.keys(this.rooms).find((room) =>
+        this.rooms[room].includes(user.userId),
+      );
+
+      if (roomId) {
+        // Удаляем пользователя из комнаты
+        this.rooms[roomId] = this.rooms[roomId].filter(
+          (id) => id !== user.userId,
+        );
+
+        if (this.rooms[roomId].length === 1) {
+          // В комнате остался один пользователь
+          const remainingUserId = this.rooms[roomId][0];
+          const remainingSocket =
+            this.server.sockets.sockets.get(remainingUserId);
+
+          if (remainingSocket) {
+            // Уведомляем оставшегося пользователя
+            remainingSocket.emit('roomClosed');
+            // Отключаем оставшегося пользователя от комнаты
+            remainingSocket.leave(roomId);
+          }
+
+          // Удаляем комнату
+          delete this.rooms[roomId];
+          console.log(`Комната ${roomId} закрыта`);
+        }
+      }
+
+      delete this.users[client.id];
+    }
+  }
+
   @SubscribeMessage('startSearch')
   handleSearch(client: Socket) {
-    const userId: string = client.handshake.query.userId as string;
-    console.log(client.handshake.query);
+    const user = this.users[client.id];
 
-    if (userId === undefined) {
-      // Проверка на undefined
-      console.error(`Ошибка: userId невалиден для клиента ${client.id}`);
-      client.emit('searchFailed', { message: 'userId невалиден', code: 404 });
-      return;
-    }
-    console.log(`Клиент ${client.id} начал поиск`);
-    if (this.queue.length > 0) {
-      const partner = this.queue.shift();
-      if (!partner) {
-        client.emit('searchFailed', { message: 'Не удалось найти пару' });
-        return;
+    if (user) {
+      console.log(`Пользователь ${user.username} (${user.userId}) начал поиск`);
+
+      if (this.queue.length > 0) {
+        const partner = this.queue.shift();
+        if (!partner) {
+          client.emit('searchFailed', { message: 'Не удалось найти пару' });
+          return;
+        }
+
+        const partnerUser = this.users[partner.id];
+
+        // Проверяем, не является ли userId одинаковым
+        if (user.userId === partnerUser.userId) {
+          console.error(
+            `Ошибка: Нельзя создать комнату с одним и тем же userId`,
+          );
+          client.emit('searchFailed', {
+            message: 'Нельзя создать комнату с самим собой',
+            code: 400,
+          });
+          return;
+        }
+
+        const roomId = `room_${user.userId}_${partnerUser.userId}`;
+        client.join(roomId);
+        partner.join(roomId);
+
+        client.emit('matchFound', { roomId });
+        partner.emit('matchFound', { roomId });
+        this.rooms[roomId] = [user.userId, partnerUser.userId];
+        console.log(
+          `Комната ${roomId} создана для ${user.userId} и ${partnerUser.userId}`,
+        );
+      } else {
+        this.queue.push(client);
       }
-      const partnerUserId: string = partner.handshake.query.userId as string;
-
-      // Проверяем, не является ли userId одинаковым
-      if (userId === partnerUserId) {
-        console.error(`Ошибка: Нельзя создать комнату с одним и тем же userId`);
-        client.emit('searchFailed', {
-          message: 'Нельзя создать комнату с самим собой',
-          code: 400,
-        });
-        return;
-      }
-
-      const roomId = `room_${userId}_${partnerUserId}`;
-      client.join(roomId);
-      partner.join(roomId);
-
-      client.emit('matchFound', { roomId });
-      partner.emit('matchFound', { roomId });
-      this.rooms[userId] = [roomId]; // Исправлено: массив строк
-      this.rooms[partnerUserId] = [roomId]; // Исправлено: массив строк
-      console.log(`Комната ${roomId} создана для ${userId} и ${partnerUserId}`);
-    } else {
-      this.queue.push(client);
     }
   }
 
@@ -113,10 +140,11 @@ export class ChatGateway implements OnGatewayDisconnect {
         message: data.message,
         timestamp: new Date(),
       });
+
       this.server.to(data.roomId).emit('newMessage', message);
       console.log(
         `Сообщение ${data.message} отправлено в комнату ${data.roomId}`,
-      ); // Добавлено логирование
+      );
     } catch (error) {
       client.emit('sendMessageFailed', {
         message: 'Не удалось отправить сообщение',

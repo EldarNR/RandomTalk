@@ -8,6 +8,8 @@ export interface Message {
 }
 
 export interface User {
-  name: string;
+  userId: string;
+  status: string;
+  username: string;
   avatar: string;
 }

@@ -38,11 +38,25 @@ if (userId.value && !localStorage.getItem("userId")) {
     localStorage.setItem("userId", userId.value);
 }
 
+const username = ref<string>(localStorage.getItem("username") || "Guest - " + generateUserId()); // Добавляем значение по умолчанию
+
 const socket = io("ws://localhost:5000", {
     query: {
         userId: userId.value,
-        username: localStorage.getItem("username"),
+        username: username.value, // Используем значение по умолчанию
     },
+});
+
+socket.on("searchFailed", (data) => {
+    console.error("❌ Ошибка поиска:", data.message);
+    isSearching.value = false;
+    // Отобразите сообщение об ошибке пользователю
+});
+
+socket.on("disconnect", () => {
+    console.error("❌ Соединение с сервером потеряно");
+    isSearching.value = false;
+    // Отобразите сообщение об ошибке пользователю
 });
 
 socket.on("connect", () => {

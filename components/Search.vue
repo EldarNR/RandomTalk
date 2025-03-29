@@ -27,6 +27,8 @@ import { useRouter } from "vue-router";
 import vButton from "./ui/v-button/v-button.vue";
 import vText from "./ui/v-text/v-text.vue";
 
+import emitter from './func/mitt';
+
 import { generateUserId } from "./func/generateUserId";
 
 const router = useRouter();
@@ -43,20 +45,18 @@ const username = ref<string>(localStorage.getItem("username") || "Guest - " + ge
 const socket = io("ws://localhost:5000", {
     query: {
         userId: userId.value,
-        username: username.value, // Используем значение по умолчанию
+        username: username.value,
     },
 });
 
 socket.on("searchFailed", (data) => {
-    console.error("❌ Ошибка поиска:", data.message);
+    emitter.emit('show-error', "❌ Ошибка поиска:", data.message);
     isSearching.value = false;
-    // Отобразите сообщение об ошибке пользователю
 });
 
 socket.on("disconnect", () => {
-    console.error("❌ Соединение с сервером потеряно");
+    emitter.emit('show-error', "❌ Соединение с сервером потеряно");
     isSearching.value = false;
-    // Отобразите сообщение об ошибке пользователю
 });
 
 socket.on("connect", () => {
@@ -64,13 +64,13 @@ socket.on("connect", () => {
 });
 
 socket.on("connect_error", (error) => {
-    console.error("❌ Ошибка подключения:", error);
+    emitter.emit('show-error', "❌ Ошибка подключения:", error);
 });
 
 const findPartner = async () => {
     if (isSearching.value) return;
     if (!socket.connected) {
-        console.error("❌ Соединение не установлено");
+        emitter.emit('show-error', "❌ Соединение не установлено");
         return;
     }
 
@@ -94,7 +94,7 @@ const cancelSearch = () => {
 };
 
 socket.on("searchCanceled", () => {
-    console.log("❌ Поиск отменён");
+    console.error("❌ Поиск отменён");
     isSearching.value = false;
 });
 </script>

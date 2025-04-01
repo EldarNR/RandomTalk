@@ -28,6 +28,8 @@ import vText from "./ui/v-text/v-text.vue";
 
 import { generateUserId } from "./func/generateUserId";
 
+import { __URL_API } from '~/server/API';
+
 const isSearching = ref(false);
 const roomId = ref(null);
 let userId = ref<string>(localStorage.getItem("userId") || generateUserId());
@@ -37,7 +39,7 @@ if (userId.value && !localStorage.getItem("userId")) {
 }
 
 const username = ref<string>(localStorage.getItem("username") || "Guest - " + generateUserId()); // Добавляем значение по умолчанию
-const socket = io("ws://localhost:5000", {
+const socket = io(__URL_API, {
     query: {
         userId: userId.value,
         username: username.value, // Используем значение по умолчанию

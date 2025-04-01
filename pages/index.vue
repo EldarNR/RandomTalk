@@ -4,14 +4,9 @@
         <Login @set="(val: boolean) => isLogin = val" v-else />
     </div>
 </template>
-
 <script setup lang="ts">
 import Login from "~/components/Login.vue";
 import Search from "~/components/Search.vue";
-import Error from "~/components/Error.vue"; 
-import { ref, onMounted } from 'vue';
-
+import { ref } from 'vue';
 const isLogin = ref(false);
-
-
 </script>

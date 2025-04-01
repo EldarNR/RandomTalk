@@ -20,42 +20,59 @@ import Error from '~/components/Error.vue';
 import emitter from '~/components/func/mitt';
 import { generateUserId } from '~/components/func/generateUserId';
 import type { Message, User } from '~/components/chat-page/types/chat.types.js';
+import { NuxtLink } from '#components';
 
 interface PartnerUser extends User {
     userId: string;
 }
 
 const config = useRuntimeConfig();
-const apiBase = config.public.apiBase; // API
+const apiBase = config.public.apiBase;
 const partner = ref<PartnerUser | null>(null);
 const messages = ref<Message[]>([]);
 const router = useRouter();
 const roomId = ref('');
 const messageList = ref<InstanceType<typeof MessageList> | null>(null);
-let userId = ref<string>(localStorage.getItem('userId') || generateUserId());
-const username = ref<string>(localStorage.getItem('username') || "Anonymous"); // Добавляем значение по умолчанию
-let socket = io(apiBase, {
-    query: { userId: userId.value, username: username.value }, // Передача username
-});
-if (userId.value) {
-    if (typeof window !== 'undefined') {
-        localStorage.setItem('userId', userId.value); // Сохраняем userId в localStorage
+
+function useLocalStorage() {
+    function getItem(key: string): string | null {
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem(key);
+        }
+        return null;
     }
-    socket = io(apiBase, {
-        query: { userId: userId.value, username: username.value },
-    });
-} else {
-    console.error('userId не определен');
-    emitter.emit('show-error', 'Обработайте случай, когда userId не определен');
-    // Обработайте случай, когда userId не определен
+
+    function setItem(key: string, value: string): void {
+        if (typeof window !== 'undefined') {
+            localStorage.setItem(key, value);
+        }
+    }
+
+    function removeItem(key: string): void {
+        if (typeof window !== 'undefined') {
+            localStorage.removeItem(key);
+        }
+    }
+
+    return { getItem, setItem, removeItem };
 }
 
+const { getItem, setItem, removeItem } = useLocalStorage();
+
+let userId = ref<string>(getItem('userId') || generateUserId());
+const username = ref<string>(getItem('username') || 'Anonymous');
+
+let socket = io(apiBase, {
+    query: { userId: userId.value, username: username.value },
+});
+
 console.log('userId при подключении:', userId.value);
+
 socket.on('connect', () => console.log('✅ Подключено к серверу! ID сокета:', socket.id));
 socket.on('disconnect', () => console.log('❌ Отключено от сервера'));
 socket.on('connect_error', (error) => {
     console.error('❌ Ошибка подключения:', error);
-    emitter.emit('show-error', `Ошибка подключения: ${error.message}`); // Добавляем обработку ошибки
+    emitter.emit('show-error', `Ошибка подключения: ${error.message}`);
 });
 socket.on('newMessage', handleNewMessage);
 socket.on('matchFound', handleMatchFound);
@@ -67,40 +84,32 @@ socket.on('roomClosed', () => {
     router.push('/');
 });
 socket.on('statusChanged', (data: PartnerUser) => {
-    console.log('Получено событие statusChanged:', data);
     if (partner.value && partner.value.userId === data.userId) {
         partner.value.status = data.status;
-        console.log('Статус партнера обновлен:', partner.value.status);
     }
 });
 
-socket.on('userDisconnected', (data: { userId: string }) => {
-    console.log('Собеседник отключился:', data.userId);
-    alert('Собеседник покинул чат.');
-});
 function handleMatchFound(data: { roomId: string; partner: User }) {
-    console.log('Найдена пара, roomId:', data.roomId, 'partner:', data.partner);
     roomId.value = data.roomId;
-
     const partnerWithUserId: PartnerUser = {
         ...data.partner,
         userId: data.partner.userId,
     };
-
     partner.value = partnerWithUserId;
-    localStorage.setItem('roomId', data.roomId);
+    setItem('roomId', data.roomId);
     getMessage();
 }
+
 async function getMessage() {
     try {
-        const roomId = localStorage.getItem('roomId');
-        console.log('getMessage, roomId:', roomId); // Добавляем логирование
-        if (!roomId) {
+        const roomIdValue = getItem('roomId');
+        console.log('getMessage, roomId:', roomIdValue);
+        if (!roomIdValue) {
             console.error('roomId не найден в localStorage');
             emitter.emit('show-error', 'roomId не найден в localStorage');
             return;
         }
-        const response = await fetch(`${apiBase}/messages/${roomId}`);
+        const response = await fetch(`${apiBase}/messages/${roomIdValue}`);
         if (!response.ok) {
             const errorMessage = `HTTP error! status: ${response.status}`;
             console.error(errorMessage);
@@ -113,7 +122,7 @@ async function getMessage() {
             isMine: message.userId === userId.value,
         }));
         messageList.value?.scrollToBottom();
-        localStorage.setItem('chatMessages', JSON.stringify(messages.value));
+        setItem('chatMessages', JSON.stringify(messages.value));
     } catch (error) {
         console.error('Ошибка при получении истории сообщений:', error);
         emitter.emit('show-error', 'Ошибка при получении истории сообщений');
@@ -122,56 +131,48 @@ async function getMessage() {
 
 function handleSearchFailed(data: { message: string }) {
     console.error('Ошибка поиска:', data.message);
-    emitter.emit('show-error', data.message); // Добавляем обработку ошибки
+    emitter.emit('show-error', data.message);
+    navigateTo('/');
 }
 
 function handleSendMessageFailed(data: { message: string }) {
     console.error('Ошибка отправки сообщения:', data.message);
-    emitter.emit('show-error', data.message); // Добавляем обработку ошибки
+    emitter.emit('show-error', data.message);
 }
 
 function handleUserDisconnected(data: { userId: string }) {
     console.log('Пользователь отключился:', data.userId);
-    // Убираем изменение статуса здесь, полагаемся на statusChanged
 }
-
-socket.on('statusChanged', (data: PartnerUser) => {
-    if (partner.value && partner.value.userId === data.userId) {
-        partner.value.status = data.status;
-    }
-});
 
 function handleSendMessage(message: string) {
     const newMessage: Message = {
         id: crypto.randomUUID(),
         message,
         userId: userId.value,
-        roomId: localStorage.getItem('roomId') || '',
+        roomId: getItem('roomId') || '',
         timestamp: new Date(),
         isMine: true,
     };
-    messages.value.push(newMessage); // Добавляем сообщение в messages
+    messages.value.push(newMessage);
     messageList.value?.scrollToBottom();
     socket.emit('sendMessage', {
         message,
         userId: userId.value,
-        roomId: localStorage.getItem('roomId'),
+        roomId: getItem('roomId'),
     });
-    localStorage.setItem('chatMessages', JSON.stringify(messages.value)); // Сохранение сообщений
+    setItem('chatMessages', JSON.stringify(messages.value));
 }
 
 function handleNewMessage(message: Message) {
     console.log('Получено новое сообщение:', message);
-    // Проверяем, является ли сообщение вашим собственным
     if (message.userId !== userId.value) {
         messages.value.push({ ...message, isMine: message.userId === userId.value });
         messageList.value?.scrollToBottom();
-        localStorage.setItem('chatMessages', JSON.stringify(messages.value)); // Сохранение сообщений
+        setItem('chatMessages', JSON.stringify(messages.value));
     }
 }
 
 function disconnect() {
-    console.log('Отключился от чата');
     socket.emit('disconnectUser', { userId: userId.value, roomId: roomId.value });
     router.push('/');
 }
@@ -181,20 +182,18 @@ onMounted(async () => {
     socket.on('room', (room: string) => {
         console.log('Получен roomId:', room);
         roomId.value = room;
-        localStorage.setItem('roomId', room);
+        setItem('roomId', room);
     });
-    // Загрузка сообщений из localStorage
-    const storedMessages = localStorage.getItem('chatMessages');
+    const storedMessages = getItem('chatMessages');
     if (storedMessages) {
         messages.value = JSON.parse(storedMessages);
     }
-
     await getMessage();
     socket.emit('startSearch');
 });
 
 onUnmounted(() => {
-    localStorage.removeItem('chatMessages');
+    removeItem('chatMessages');
     socket.disconnect();
 });
 </script>

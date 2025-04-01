@@ -8,7 +8,7 @@
             <vText>✅ Найден собеседник! Комната: {{ roomId }}</vText>
         </p>
         <vButton @click="$emit('set', false)">
-            <vText>Register</vText>
+            <vText>{{ username }}</vText>
         </vButton>
         <vButton @click="findPartner" :disabled="isSearching">
             <vText> {{ isSearching ? "Поиск..." : "Найти собеседника" }}</vText>
@@ -22,14 +22,12 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { io } from "socket.io-client";
-import { useRouter } from "vue-router";
 
 import vButton from "./ui/v-button/v-button.vue";
 import vText from "./ui/v-text/v-text.vue";
 
 import { generateUserId } from "./func/generateUserId";
 
-const router = useRouter();
 const isSearching = ref(false);
 const roomId = ref(null);
 let userId = ref<string>(localStorage.getItem("userId") || generateUserId());
@@ -39,7 +37,6 @@ if (userId.value && !localStorage.getItem("userId")) {
 }
 
 const username = ref<string>(localStorage.getItem("username") || "Guest - " + generateUserId()); // Добавляем значение по умолчанию
-
 const socket = io("ws://localhost:5000", {
     query: {
         userId: userId.value,
@@ -85,7 +82,7 @@ socket.on("matchFound", (data) => {
     roomId.value = data.roomId;
     localStorage.setItem("roomId", String(roomId.value));
     isSearching.value = false;
-    router.push(`/${roomId.value}`);
+    navigateTo(`/${roomId.value}`);
 });
 
 const cancelSearch = () => {
